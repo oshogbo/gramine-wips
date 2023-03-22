@@ -287,7 +287,6 @@ class TC_00_FileSystem(RegressionTestCase):
     def test_203_copy_dir_sendfile(self):
         self.do_copy_test('copy_sendfile', 60)
 
-    @expectedFailureIf(HAS_SGX)
     def test_204_copy_dir_mmap_whole(self):
         self.do_copy_test('copy_mmap_whole', 30)
 
