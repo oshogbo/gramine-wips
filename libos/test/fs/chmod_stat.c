@@ -1,5 +1,9 @@
 #include "common.h"
 
+#ifndef ACCESSPERMS
+#define ACCESSPERMS (S_IRWXU|S_IRWXG|S_IRWXO)
+#endif
+
 static void chmod_stat(const char* file_path) {
     struct stat st;
     uint32_t perm, expected_perm = 0644;
