@@ -15,6 +15,7 @@ testdir = os.path.dirname(os.path.abspath(__file__))
 
 class TempRSAKeyFile:
     def __init__(self, passphrase=None, key_size=3072):
+        # pylint: disable=import-outside-toplevel
         from graminelibos.sgx_sign import SGX_RSA_PUBLIC_EXPONENT
 
         self.temp_file = tempfile.NamedTemporaryFile()
@@ -22,7 +23,7 @@ class TempRSAKeyFile:
         key = rsa.generate_private_key(public_exponent=SGX_RSA_PUBLIC_EXPONENT, key_size=key_size)
 
         encryption_algorithm = serialization.NoEncryption()
-        if passphrase != None:
+        if passphrase:
             encryption_algorithm = serialization.BestAvailableEncryption(passphrase)
 
         private_key = key.private_bytes(encoding=serialization.Encoding.PEM,
@@ -40,6 +41,7 @@ class TempRSAKeyFile:
 
 # pylint: disable=too-many-arguments
 def verify_signature(data, exponent, modulus, signature, key_file, passphrase=None):
+    # pylint: disable=import-outside-toplevel
     from graminelibos.sgx_sign import _cryptography_backend
     private_key = serialization.load_pem_private_key(key_file.read(), password=passphrase,
         backend=_cryptography_backend)
@@ -59,6 +61,7 @@ def verify_signature(data, exponent, modulus, signature, key_file, passphrase=No
 # SGX support.
 @pytest.mark.sgx
 def test_sign_from_pem_path():
+    # pylint: disable=import-outside-toplevel
     from graminelibos.sgx_sign import sign_with_private_key_from_pem_path
 
     data = b'lorem ipsum dolor sit amet consectetur adipiscing elit'
@@ -71,12 +74,13 @@ def test_sign_from_pem_path():
 # SGX support.
 @pytest.mark.sgx
 def test_sign_from_pem_path_with_passphrase():
+    # pylint: disable=import-outside-toplevel
     from graminelibos.sgx_sign import sign_with_private_key_from_pem_path
 
     data = b'lorem ipsum dolor sit amet consectetur adipiscing elit'
-    passphrase = b"randompassphrase"
+    passphrase = b'randompassphrase'
 
     with TempRSAKeyFile(passphrase=passphrase) as key_file:
-        exponent, modulus,  signature = sign_with_private_key_from_pem_path(data, key_file.name,
+        exponent, modulus, signature = sign_with_private_key_from_pem_path(data, key_file.name,
             passphrase)
         verify_signature(data, exponent, modulus, signature, key_file, passphrase)
