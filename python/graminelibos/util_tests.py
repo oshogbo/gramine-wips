@@ -41,8 +41,8 @@ class TestConfig:
     Ninja handles the following targets:
 
     - `NAME.manifest`, `NAME.manifest.sgx`, `NAME.sig`, `NAME.token`
-    - `direct`, `sgx`: all files
-    - `direct-NAME`, `sgx-NAME`: files related to a single manifest
+    - `direct`, `native`, `sgx`: all files
+    - `direct-NAME`, `native-NAME`, `sgx-NAME`: files related to a single manifest
     '''
 
     def __init__(self, path):
@@ -176,6 +176,13 @@ class TestConfig:
         ninja.newline()
 
         ninja.build(
+            outputs=['native'],
+            rule='phony',
+            inputs=([f'{name}.manifest' for name in self.manifests]),
+        )
+        ninja.newline()
+
+        ninja.build(
             outputs=['sgx'],
             rule='phony',
             inputs=([f'{name}.manifest' for name in self.all_manifests] +
@@ -231,9 +238,10 @@ def gen_build_file(conf_file_name='tests.toml'):
     config.gen_build_file('build.ninja')
 
 
-def exec_pytest(sgx, args):
+def exec_pytest(sgx, native, args):
     env = os.environ.copy()
     env['SGX'] = '1' if sgx else ''
+    env['NATIVE'] = '1' if native else ''
 
     argv = [os.path.basename(sys.executable), '-m', 'pytest'] + list(args)
     print(' '.join(argv))
@@ -246,8 +254,13 @@ def run_ninja(args):
     subprocess.check_call(argv)
 
 
-def exec_gramine(sgx, name, args):
-    prog = 'gramine-sgx' if sgx else 'gramine-direct'
+def exec_gramine(sgx, native, name, args):
+    prog = 'gramine-direct'
+    if sgx:
+        prog = 'gramine-sgx'
+    elif native:
+        prog = 'gramine-test-native'
+
     argv = [prog, name] + list(args)
     print(' '.join(argv))
     os.execvp(prog, argv)

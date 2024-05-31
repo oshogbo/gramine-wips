@@ -1,0 +1,165 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
+# Copyright (C) 2024 Intel Corporation
+#                    Mariusz Zaborski <oshogbo@invisiblethingslab.com>
+
+import click
+import os
+import pathlib
+import subprocess
+import tempfile
+
+from graminelibos import Manifest
+from graminelibos.manifest import uri2path
+
+class ManifestFile(click.File):
+    def convert(self, value, param, ctx):
+        if value and not value.endswith('.manifest'):
+            value += '.manifest'
+        return super().convert(value, param, ctx)
+
+def mount_bind(source, target, use_sudo):
+    cmd = ['mount', '--bind', source, target]
+    if use_sudo:
+        cmd = ['sudo'] + cmd
+    subprocess.run(cmd, check=True)
+
+def mount_tmpfs(target, use_sudo):
+    cmd = ['mount', '-t', 'tmpfs', 'tmpfs', target]
+    if use_sudo:
+        cmd = ['sudo'] + cmd
+    subprocess.run(cmd, check=True)
+
+def unmount(mountpoint, use_sudo):
+    cmd = ['umount', mountpoint]
+    if use_sudo:
+        cmd = ['sudo'] + cmd
+    subprocess.run(cmd, check=True)
+
+class TemporaryDirectoryWithUnmount(tempfile.TemporaryDirectory):
+    def __init__(self, cleanup_flag, use_sudo, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mountpoints = []
+        self.use_sudo = use_sudo
+        if not cleanup_flag:
+            self._finalizer.detach()
+
+    def register_mountpoint(self, mountpoint):
+        self.mountpoints.append(mountpoint)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        for mountpoint in reversed(self.mountpoints):  # Unmount in reverse order
+            unmount(mountpoint, self.use_sudo)
+
+        super().__exit__(exc_type, exc_value, traceback)
+
+def create_missing_mountpoints(path, uripath=None):
+    createdirs = path
+    if uripath != None and os.path.isfile(uripath):
+        createdirs = os.path.dirname(path)
+    if not os.path.exists(createdirs):
+        os.makedirs(createdirs)
+    if createdirs != path:
+        with open(path, 'w'):
+            pass
+
+def gramine_mount_file(tmpdirectory, uri, path, use_sudo):
+    uripath = str(pathlib.PurePosixPath(uri2path(uri)))
+    create_missing_mountpoints(path, uripath)
+    mount_bind(uripath, path, use_sudo)
+    tmpdirectory.register_mountpoint(path)
+
+def gramine_mount_tmpfs(tmpdirectory, path, use_sudo):
+    create_missing_mountpoints(path)
+    mount_tmpfs(path, use_sudo)
+    tmpdirectory.register_mountpoint(path)
+
+def rel_mount_path(tmpdirectory, path):
+    if os.path.isabs(path):
+        path = path.lstrip(os.sep)
+    return os.path.join(tmpdirectory.name, path)
+
+def prep_chroot(tmpdirectory, manifest, use_sudo):
+    for mount in sorted(manifest['fs']['mounts'], key=lambda k: k['path']):
+        mount_type = mount.get('type', 'file')
+        path = rel_mount_path(tmpdirectory, mount['path'])
+        if mount_type == 'file':
+            gramine_mount_file(tmpdirectory, mount['uri'], path, use_sudo)
+        elif mount_type == 'tmpfs':
+            gramine_mount_tmpfs(tmpdirectory, path, use_sudo)
+        elif mount_type == 'encrypted':
+            pass
+            #print(path, mount_type)
+        else:
+            raise ValueError(f'Unsupported file type: {mount_type}')
+
+def rel_get_ld(tmpdirectory, entrypoint):
+    path = os.path.join(tmpdirectory.name, entrypoint)
+    try:
+        output = subprocess.check_output(['ldd', path]).decode('ascii')
+    except:
+        return None
+
+    for line in output.rstrip('\n').split('\n'):
+        line = line.strip().split()
+        if len(line) == 1 and line[0].endswith(':'):
+            # header for when there are multiple binaries given
+            continue
+        
+        name = ""
+        if line[1] == '=>' and line[2].startswith('/'):
+            name = line[2]
+        elif line[0].startswith('/'):
+            name = line[0]
+
+        if 'ld-linux' in name:
+            return name
+
+    return None
+
+def mount_loader(tmpdirectory, manifest, use_sudo):
+    ldpath = rel_get_ld(tmpdirectory, manifest['libos']['entrypoint'])
+    if ldpath is None:
+        return
+
+    lduri = f'file://{ldpath}'
+    gramine_mount_file(tmpdirectory, lduri, rel_mount_path(tmpdirectory, ldpath), use_sudo)
+
+def run_chroot(tmpdirectory, manifest, args, use_sudo):
+    cmd = ['chroot', tmpdirectory.name, "./" + manifest['libos']['entrypoint']]
+    if use_sudo:
+        cmd = ['sudo'] + cmd
+    if len(args) > 0:
+        if not manifest['loader']['insecure__use_cmdline_argv']:
+            raise ValueError('Extra parameters were provided; however, the command line ' \
+                'arguments are disabled ("loader.insecure__use_cmdline_argv").')
+        cmd += args
+
+    subprocess.run(cmd)
+
+def get_default_use_sudo():
+    return os.getenv('USE_SUDO', '').lower() in ('true', '1', 'yes')
+
+@click.command()
+@click.option('--cleanup/--no-cleanup', default=True,
+    help='cleanup tmp dir')
+@click.option('--use-sudo/--no-use-sudo', default=get_default_use_sudo,
+    help='use sudo before system commands')
+@click.argument('manifest_file', type=ManifestFile('r'), required=True)
+@click.argument('args', nargs=-1, type=click.UNPROCESSED)
+def main(cleanup, use_sudo, manifest_file, args):
+    manifest = Manifest.load(manifest_file)
+
+    with TemporaryDirectoryWithUnmount(cleanup, use_sudo) as tempdir:
+        if not cleanup:
+            print(f'Your testing enviorment is in {tempdir.name}')
+
+        prep_chroot(tempdir, manifest, use_sudo)
+        mount_loader(tempdir, manifest, use_sudo)
+        run_chroot(tempdir, manifest, args, use_sudo)
+
+if __name__ == '__main__':
+    main() # pylint: disable=no-value-for-parameter

@@ -10,6 +10,7 @@ install_data([
 if enable_tests
     install_data([
         'gramine-test',
+        'gramine-test-native',
     ], install_dir: get_option('bindir'))
 endif
 

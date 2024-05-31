@@ -19,6 +19,7 @@ fspath = getattr(os, 'fspath', str) # pylint: disable=invalid-name
 HAS_AVX = os.environ.get('AVX') == '1'
 HAS_EDMM = os.environ.get('EDMM') == '1'
 HAS_SGX = os.environ.get('SGX') == '1'
+RUN_NATIVE = os.environ.get('NATIVE') == '1'
 IS_VM = os.environ.get('IS_VM') == '1'
 ON_X86 = os.uname().machine in ['x86_64']
 USES_MUSL = os.environ.get('GRAMINE_MUSL') == '1'
@@ -193,6 +194,7 @@ class RegressionTestCase(unittest.TestCase):
         return '.debug_info' in dump
 
     def run_gdb(self, args, gdb_script, **kwds):
+        # XXXosho: add support for native
         prefix = ['gdb', '-q']
         env = os.environ.copy()
         if HAS_SGX:
@@ -220,7 +222,10 @@ class RegressionTestCase(unittest.TestCase):
         if prefix is None:
             prefix = []
 
-        cmd = [*prefix, fspath(self.loader_path), fspath(self.libpal_path), 'init', *args]
+        if RUN_NATIVE:
+            cmd = ['gramine-test-native', *args]
+        else:
+            cmd = [*prefix, fspath(self.loader_path), fspath(self.libpal_path), 'init', *args]
         _returncode, stdout, stderr = run_command(cmd, timeout=timeout, **kwds)
         return stdout, stderr
 

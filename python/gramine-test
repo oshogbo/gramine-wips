@@ -18,17 +18,22 @@ def change_dir(_ctx, _param, value):
 @click.group(help='Helper program for running Gramine tests.')
 @click.option('--sgx/--no-sgx', default=(os.environ.get('SGX') == '1'),
               help='Enable SGX mode (you can also set SGX=1 before running)')
+@click.option('--native/--no-native', default=(os.environ.get('NATIVE') == '1'),
+              help='Run tests without gramine (you can also set NATIVE=1 before running)')
 @click.option('--conf-file-name', '-n', type=click.Path(exists=True, dir_okay=False),
               default='tests.toml', help='Configuration file name to use')
 @click.option('--directory', '-C', callback=change_dir, expose_value=False, is_eager=True,
               metavar='dir', type=click.Path(file_okay=False),
               help='Change directory before running')
 @click.pass_context
-def main(ctx, sgx, conf_file_name):
+def main(ctx, sgx, native, conf_file_name):
     if sgx and not _CONFIG_SGX_ENABLED:
         raise click.ClickException('This version of Gramine is built without SGX')
+    if sgx and native:
+        raise click.ClickException('Native and SGX options are mutually exclusive')
     ctx.obj = {
         'sgx': sgx,
+        'native': native,
         'conf_file_name': conf_file_name,
     }
 
@@ -46,9 +51,10 @@ def regenerate(ctx):
 @click.argument('names', type=str, nargs=-1)
 def build(ctx, force, verbose, names):
     sgx = ctx.obj['sgx']
+    native = ctx.obj['native']
     names = [strip_suffix(name) for name in names]
 
-    rebuild(sgx, ctx.obj['conf_file_name'], *names, force=force, verbose=verbose)
+    rebuild(sgx, native, ctx.obj['conf_file_name'], *names, force=force, verbose=verbose)
 
 
 @main.command(help='Remove all generated files.')
@@ -78,10 +84,11 @@ def clean(ctx):
 @click.pass_context
 def run(ctx, force, verbose, name, args):
     sgx = ctx.obj['sgx']
+    native = ctx.obj['sgx']
     name = strip_suffix(name)
 
-    rebuild(sgx, ctx.obj['conf_file_name'], name, force=force, verbose=verbose)
-    util_tests.exec_gramine(sgx, name, args)
+    rebuild(sgx, native, ctx.obj['conf_file_name'], name, force=force, verbose=verbose)
+    util_tests.exec_gramine(sgx, native, name, args)
 
 
 # NOTE: We do not accept the `-v/-q` short options in the below command, because Pytest accepts the
@@ -97,9 +104,10 @@ def run(ctx, force, verbose, name, args):
 @click.pass_context
 def pytest(ctx, force, verbose, args):
     sgx = ctx.obj['sgx']
+    native = ctx.obj['native']
 
-    rebuild(sgx, ctx.obj['conf_file_name'], force=force, verbose=verbose)
-    util_tests.exec_pytest(sgx, args)
+    rebuild(sgx, native, ctx.obj['conf_file_name'], force=force, verbose=verbose)
+    util_tests.exec_pytest(sgx, native, args)
 
 
 def strip_suffix(name):
@@ -114,10 +122,16 @@ def strip_suffix(name):
     return name
 
 
-def rebuild(sgx, conf_file_name, *names, force=False, verbose=False):
+def rebuild(sgx, native, conf_file_name, *names, force=False, verbose=False):
     util_tests.gen_build_file(conf_file_name)
     verbosity = ['-v'] if verbose else []
-    host = 'sgx' if sgx else 'direct'
+
+    host = 'direct'
+    if sgx:
+        host = 'sgx'
+    elif native:
+        host = 'native'
+
     if names:
         targets = [f'{host}-{name}' for name in names]
     else:

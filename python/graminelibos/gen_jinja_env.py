@@ -11,6 +11,7 @@ from . import _CONFIG_PKGLIBDIR
 def parse_ldd(output):
     # Be careful: We have to skip vdso, which doesn't have a corresponding file on the disk (we
     # assume that such files have paths starting with '/', seems ldd always prints absolute paths).
+    # It also skips ld-linux.
     # Also, old ldd (from Ubuntu 16.04) prints vdso differently than newer ones:
     # old:
     #     linux-vdso.so.1 =>  (0x00007ffd31fee000)
