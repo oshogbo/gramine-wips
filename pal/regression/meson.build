@@ -1,13 +1,3 @@
-if skeleton
-    libpal = libpal_skeleton_dep
-elif direct
-    libpal = libpal_direct_dep
-elif sgx
-    libpal = libpal_sgx_dep
-else
-    error('need to link tests against a PAL library, but no PAL version is enabled')
-endif
-
 tests = {
     '..Bootstrap': {},
     'Bootstrap': {},
@@ -164,8 +154,6 @@ foreach name, params : tests
 
             params.get('link_args', []),
         ],
-
-        dependencies: libpal,
 
         install: true,
         install_dir: install_dir,

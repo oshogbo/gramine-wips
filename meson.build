@@ -50,6 +50,7 @@ vtune = get_option('vtune') == 'enabled'
 
 enable_libgomp = get_option('libgomp') == 'enabled'
 enable_tests = get_option('tests') == 'enabled'
+force_sgx_tests = get_option('force_sgx_tests') == 'enabled'
 
 cc = meson.get_compiler('c')
 host_has_glibc = cc.get_define('__GLIBC__', prefix: '#include <features.h>') != ''
@@ -230,7 +231,6 @@ endif
 #
 # Dependencies
 #
-
 tomlc99_proj = subproject('tomlc99-208203af46bdbdb29ba199660ed78d09c220b6c5')
 tomlc99_dep = tomlc99_proj.get_variable('tomlc99_dep')
 tomlc99_src = tomlc99_proj.get_variable('tomlc99_src')
@@ -288,16 +288,25 @@ endif
 # The compilation
 #
 
-subdir('common')
-subdir('pal')
+src_build = skeleton or direct or sgx
+
+
+if src_build
+  subdir('common')
+  subdir('pal')
+endif
 subdir('libos')
 subdir('python')
-subdir('tools')
+if src_build
+  subdir('tools')
+endif
 
-if get_option('libc') == 'glibc'
-    subproject('glibc-2.39-1')
-elif get_option('libc') == 'musl'
-    subproject('musl-1.2.4')
+if src_build
+  if get_option('libc') == 'glibc'
+      subproject('glibc-2.39-1')
+  elif get_option('libc') == 'musl'
+      subproject('musl-1.2.4')
+  endif
 endif
 
 if enable_libgomp
